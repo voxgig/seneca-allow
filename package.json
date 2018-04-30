@@ -4,7 +4,7 @@
   "description": "Seneca plugin for user and group permissions.",
   "main": "allow.js",
   "scripts": {
-    "test": "lab -P test -t 90",
+    "test": "lab -P test -t 80",
     "prettier": "prettier --write --no-semi --single-quote *.js lib/*.js test/*.js",
     "coveralls": "lab -s -P test -r lcov | coveralls"
   },
@@ -23,6 +23,7 @@
     "README.md",
     "allow.js"
   ],
+  "engines": {"node":">=6"},
   "dependencies": {
     "lodash": "4.17.10",
     "optioner": "1.1.x",
