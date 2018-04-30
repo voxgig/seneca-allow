@@ -1,7 +1,7 @@
 {
   "name": "seneca-allow",
   "version": "0.0.1",
-  "description": "Seneca plugin",
+  "description": "Seneca plugin for user and group permissions.",
   "main": "allow.js",
   "scripts": {
     "test": "lab -P test -t 90",

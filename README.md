@@ -1,5 +1,5 @@
 # seneca-allow
-[Seneca](senecajs.org) plugin providing messages for a generic key-value store.
+[Seneca](senecajs.org) plugin for user and group permissions.
 
 [![Npm][BadgeNpm]][Npm]
 [![Travis][BadgeTravis]][Travis]
