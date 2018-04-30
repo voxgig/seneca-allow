@@ -24,8 +24,9 @@
     "allow.js"
   ],
   "dependencies": {
+    "lodash": "4.17.10",
     "optioner": "1.1.x",
-    "patrun": "^0.5.1"
+    "patrun": "0.5.1"
   },
   "devDependencies": {
     "code": "4",
