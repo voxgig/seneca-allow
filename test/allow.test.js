@@ -352,6 +352,177 @@ lab.test('access-org-field', fin => {
 })
 
 
+
+lab.test('access-org-readwrite', fin => {
+
+  const kv_alice_bob_org2 = make_kv({
+    'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
+    'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
+    'cathy': {usr$:'cathy', perms: [{p:{usr$:'catch',usr:'cathy'}, v:true}]},
+    
+    // This is an important default, forces perms into groups
+    'org2': {org$:'org2', perms: [{p:{org$:'org2'}, v:false}]},
+
+    // the admin pseudo-group for org2
+    'admin': {grp:'admin', perms: [
+      {p:{}, v:true},
+    ]},
+
+    // the write pseudo-group for org2
+    'write-a': {grp:'write-a', perms: [
+      {p:{cmd$:'save',mark:'a'}, v:true},
+      {p:{cmd$:'remove',mark:'a'}, v:true},
+      {p:{cmd$:'load',mark:'a'}, v:true},
+      {p:{cmd$:'list',mark:'a'}, v:true}
+    ]},
+
+    // the read pseudo-group for org2
+    'read-a': {grp:'read-a', perms: [
+      {p:{cmd$:'load',mark:'a'}, v:true},
+      {p:{cmd$:'list',mark:'a'}, v:true}
+    ]},
+    
+    'alice~org2':{usr$:'alice', org$:'org2', groups: ['write-a']},
+    'bob~org2':{usr$:'bob', org$:'org2', groups: ['read-a']},
+    'cathy~org2':{usr$:'cathy', org$:'org2', groups: ['admin']},
+  })
+
+
+  
+  Seneca()
+    //.test('print')
+    .test('silent')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+      kv: kv_alice_bob_org2
+    })
+    .use(function () {
+      this
+        .add('role:entity,cmd:save',function(msg,reply){
+          msg.ent.usr = msg.usr
+          msg.ent.org = msg.org
+          this.prior(msg,reply)
+        })
+    })
+    .ready(function() {
+      var alice_org2 = this.delegate({usr:'alice', org:'org2'})
+      var bob_org2 = this.delegate({usr:'bob', org:'org2'})
+      var cathy_org2 = this.delegate({usr:'cathy', org:'org2'})
+
+      // alice can write a
+      alice_org2
+        .make$('qaz', {id$:1, mark:'a'})
+        .save$(function (err, qaz1) {
+          if(err) return fin(err)
+          expect(qaz1).exist()
+
+          // alice can't write b
+          alice_org2
+            .make$('qaz', {id$:2, mark:'b'})
+            .save$(function (err, qaz2) {
+              expect(err).exist()
+              expect(qaz2).not.exist()
+
+              // alice can write a
+              alice_org2
+                .make$('qaz', {id$:3, mark:'a'})
+                .save$(function (err, qaz3) {
+                  if(err) return fin(err)
+                  expect(qaz3).exist()
+
+                  // cathy can write anything
+                  cathy_org2
+                    .make$('qaz', {id$:2, mark:'b'})
+                    .save$(function (err, qaz2) {
+                      if(err) return fin(err)
+                      expect(qaz2).exist()
+
+                      do_access(alice_org2, bob_org2, cathy_org2)
+                    })
+                })
+            })
+        })
+      
+      function do_access(alice_org2, bob_org2, cathy_org2) {
+        // bob can't write
+        bob_org2
+          .make$('qaz', {id$:4, mark:'a'})
+          .save$(function (err, qaz4) {
+            //console.log(err,qaz)
+            expect(err).exist()
+            expect(qaz4).not.exist()
+            
+            // alice can read
+            alice_org2
+              .make$('qaz')
+              .load$({id:1}, function(err, qaz){
+                //console.log(qaz)
+                if(err) return fin(err)
+                expect(qaz).exist()
+                
+                // bob can't read mark:b
+                bob_org2
+                  .make$('qaz')
+                  .load$({id:2}, function(err, qaz2){
+                    //console.log(qaz)
+                    expect(err).exist()
+                    expect(qaz2).not.exist()
+
+                    // bob can read mark:a
+                    bob_org2
+                      .make$('qaz')
+                      .load$({id:3}, function(err, qaz3){
+                        //console.log(qaz)
+                        expect(err).not.exist()
+                        expect(qaz3).exist()
+
+                        do_list(alice_org2, bob_org2, cathy_org2)
+                      })
+                  })
+              })
+          })
+      }
+
+      function do_list(alice_org2, bob_org2, cathy_org2) {
+        // alice lists 1,3
+        alice_org2
+          .make$('qaz')
+          .list$({}, function(err, list0){
+            expect(err).not.exist()
+            expect(list0.length).equal(2)
+            expect(list0[0].id).equal(1)
+            expect(list0[1].id).equal(3)
+
+            // bob lists 1,3
+            bob_org2
+              .make$('qaz')
+              .list$({}, function(err, list1){
+                expect(err).not.exist()
+                expect(list1.length).equal(2)
+                expect(list1[0].id).equal(1)
+                expect(list1[1].id).equal(3)
+
+                // cathy lists 1,2,3
+                cathy_org2
+                  .make$('qaz')
+                  .list$({}, function(err, list2){
+                    expect(err).not.exist()
+                    expect(list2.length).equal(3)
+                    expect(list2[0].id).equal(1)
+                    expect(list2[1].id).equal(2)
+                    expect(list2[2].id).equal(3)
+
+                    fin()
+                  })
+              })
+          })
+      }
+    })
+})
+
+
+
 lab.test('intern-get_perms', fin => {
   const permspecs = {
     alice: {perms:[{p:{usr$:'alice'},v:true}]},

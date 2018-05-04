@@ -69,7 +69,7 @@ module.exports = function allow(options) {
       }
 
       // case: read operation, ent returned
-      else {
+      else if('load' === msg.cmd) {
         return this.prior(msg, function(err, out) {
           if(err) return reply(err)
 
@@ -79,17 +79,42 @@ module.exports = function allow(options) {
           
           activity = intern.make_activity(msg, out)
 
-          // TODO: handle result sets with lists of ents
           const access = perms.find(activity)
 
-          //console.log(activity, perms)
-          
           if(!access) {
             return reply(new Error('no-read-access'))
           }
 
           return reply(null, out)
         })
+      }
+
+      // case: list operation, ent returned
+      else if('list' === msg.cmd) {
+
+        // TODO: pull out fields to use in query, as optimization
+        return this.prior(msg, function(err, reslist) {
+          if(err) return reply(err)
+
+          if(!reslist) return reply()
+
+          var list = []
+
+          reslist.forEach(function(ent){
+            activity = intern.make_activity(msg, ent)
+            var access = perms.find(activity)
+            
+            if(access) {
+              list.push(ent)
+            }
+          })
+
+          return reply(list)
+        })
+      }
+      else {
+        // better to return no data
+        reply()
       }
     })
   }
