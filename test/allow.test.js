@@ -51,9 +51,10 @@ lab.test('happy', fin => {
 
       aaa
         .make$('foo', {id$:1, mark:'a', usr:'aaa'})
-        .save$(function (err, foo) {
+        .save$(function (err, foo, meta) {
           if(err) return fin(err)
           expect(foo.mark).equal('a')
+          expect(meta).exists()
           
           aaa
             .make$('foo')
@@ -64,7 +65,7 @@ lab.test('happy', fin => {
               bbb
                 .make$('foo')
                 .load$(1,function (err, foo) {
-                  expect(err).exist()
+                  expect(err.code).equal('no_read_access')
                   expect(foo).not.exist()
                   fin()
                 })
@@ -79,6 +80,8 @@ lab.test('org-admin', fin => {
     'ccc': {
       perms: [
         {p:{usr$:'ccc',usr:'ccc'}, v:true},
+        // NOTE: this is not the standard way, just for testing
+        // See below for normal org/group
         {p:{org$:'QQQ'}, v:true},
       ]
     },
@@ -144,7 +147,7 @@ const kv_alice_bob_org0 = make_kv({
   'org0': {org$:'org0', perms: [{p:{org$:'org0'}, v:false}]},
   'admin0': {grp:'admin0', perms: [{p:{}, v:true}]},
   'read0': {grp:'read0', perms: [
-    {p:{cmd$:'load'}, v:true}
+    {p:{ent$:true,cmd$:'load'}, v:true}
   ]},
   
   'alice~org0':{usr$:'alice', org$:'org0', groups: ['admin0']},
@@ -179,8 +182,8 @@ lab.test('resolve_perms', fin => {
             exp.resolve_perms(this,{usr:'bob',org:'org0'},function(ignore, out){
               //console.log(out)
               expect(out.find({usr$:'bob',org$:'org0'})).equal(false)
-              expect(out.find({usr$:'bob',org$:'org0',cmd$:'load'})).equal(true)
-              expect(out.find({usr$:'bob',org$:'org0',cmd$:'save'})).equal(false)
+              expect(out.find({usr$:'bob',org$:'org0',cmd$:'load',ent$:true})).equal(true)
+              expect(out.find({usr$:'bob',org$:'org0',cmd$:'save',ent$:true})).equal(false)
 
               fin()
             })
@@ -225,7 +228,7 @@ lab.test('access-org-basic', fin => {
             .make$('zed', {id$:2, mark:'b'})
             .save$(function (err, zed) {
               //console.log(err,zed)
-              expect(err).exist()
+              expect(err.code).equal('no_write_access')
               expect(zed).not.exist()
 
               // alice can read
@@ -264,7 +267,7 @@ lab.test('access-org-field', fin => {
     'org1': {org$:'org1', perms: [{p:{org$:'org1'}, v:false}]},
     'admin0': {grp:'admin0', perms: [{p:{}, v:true}]},
     'read1': {grp:'read1', perms: [
-      {p:{cmd$:'load',mark:'a'}, v:true}
+      {p:{ent$:true,cmd$:'load',mark:'a'}, v:true}
     ]},
     
     'alice~org1':{usr$:'alice', org$:'org1', groups: ['admin0']},
@@ -316,7 +319,7 @@ lab.test('access-org-field', fin => {
           .make$('zed', {id$:2, mark:'a'})
           .save$(function (err, zed) {
             //console.log(err,zed)
-            expect(err).exist()
+            expect(err.code).equal('no_write_access')
             expect(zed).not.exist()
             
             // alice can read
@@ -332,7 +335,7 @@ lab.test('access-org-field', fin => {
                   .make$('zed')
                   .load$({id:2}, function(err, zed){
                     //console.log(zed)
-                    expect(err).exist()
+                    expect(err.code).equal('no_read_access')
                     expect(zed).not.exist()
 
                     // bob can read mark:a
@@ -370,16 +373,16 @@ lab.test('access-org-readwrite', fin => {
 
     // the write pseudo-group for org2
     'write-a': {grp:'write-a', perms: [
-      {p:{cmd$:'save',mark:'a'}, v:true},
-      {p:{cmd$:'remove',mark:'a'}, v:true},
-      {p:{cmd$:'load',mark:'a'}, v:true},
-      {p:{cmd$:'list',mark:'a'}, v:true}
+      {p:{ent$:true,cmd$:'save',mark:'a'}, v:true},
+      {p:{ent$:true,cmd$:'remove',mark:'a'}, v:true},
+      {p:{ent$:true,cmd$:'load',mark:'a'}, v:true},
+      {p:{ent$:true,cmd$:'list',mark:'a'}, v:true}
     ]},
 
     // the read pseudo-group for org2
     'read-a': {grp:'read-a', perms: [
-      {p:{cmd$:'load',mark:'a'}, v:true},
-      {p:{cmd$:'list',mark:'a'}, v:true}
+      {p:{ent$:true,cmd$:'load',mark:'a'}, v:true},
+      {p:{ent$:true,cmd$:'list',mark:'a'}, v:true}
     ]},
     
     'alice~org2':{usr$:'alice', org$:'org2', groups: ['write-a']},
@@ -421,7 +424,7 @@ lab.test('access-org-readwrite', fin => {
           alice_org2
             .make$('qaz', {id$:2, mark:'b'})
             .save$(function (err, qaz2) {
-              expect(err).exist()
+              expect(err.code).equal('no_write_access')
               expect(qaz2).not.exist()
 
               // alice can write a
@@ -450,7 +453,7 @@ lab.test('access-org-readwrite', fin => {
           .make$('qaz', {id$:4, mark:'a'})
           .save$(function (err, qaz4) {
             //console.log(err,qaz)
-            expect(err).exist()
+            expect(err.code).equal('no_write_access')
             expect(qaz4).not.exist()
             
             // alice can read
@@ -466,7 +469,7 @@ lab.test('access-org-readwrite', fin => {
                   .make$('qaz')
                   .load$({id:2}, function(err, qaz2){
                     //console.log(qaz)
-                    expect(err).exist()
+                    expect(err.code).equal('no_read_access')
                     expect(qaz2).not.exist()
 
                     // bob can read mark:a
@@ -518,6 +521,59 @@ lab.test('access-org-readwrite', fin => {
               })
           })
       }
+    })
+})
+
+
+lab.test('access-msg', fin => {
+
+  const kv_org3 = make_kv({
+    'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
+    'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
+    
+    // This is an important default, forces perms into groups
+    'org3': {org$:'org3', perms: [{p:{org$:'org3'}, v:false}]},
+
+    // the admin pseudo-group for org2
+    'canfoo': {grp:'canfoo', perms: [
+      {p:{role:'bar',cmd:'foo'}, v:true},
+    ]},
+    
+    'alice~org3':{usr$:'alice', org$:'org3', groups: ['canfoo']}
+  })
+
+
+  
+  Seneca()
+    //.test('print')
+    .test('silent')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+      kv: kv_org3,
+      pins:[
+        {role:'bar',cmd:'foo',
+         make_activity$:function(activity){return activity}}
+      ]
+    })
+    .add('role:bar,cmd:foo', function(msg, reply) {
+      reply({zed:msg.zed})
+    })
+    .ready(function() {
+      var alice_org3 = this.delegate({usr:'alice', org:'org3'})
+      var bob_org3 = this.delegate({usr:'bob', org:'org3'})
+
+      alice_org3.act('role:bar,cmd:foo,zed:a', function(err, out) {
+        expect(err).not.exist()
+        expect(out.zed).equal('a')
+
+        bob_org3.act('role:bar,cmd:foo,zed:a', function(err, out) {
+          expect(err.code).equal('no_in_access')
+          expect(out).not.exist()
+
+          fin()
+        })
+      })
     })
 })
 

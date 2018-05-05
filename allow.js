@@ -1,7 +1,6 @@
 /* Copyright (c) 2018 voxgig and other contributors, MIT License */
 'use strict'
 
-// NEXT: handle lists - loop over results - optimize later
 // NEXT: verify network lookup
 // NEXT: LRU, timeout cache
 // NEXT: proper error codes
@@ -9,14 +8,29 @@
 
 const Optioner = require('optioner')
 const Patrun = require('patrun')
+const Eraro = require('eraro')
+const Jsonic = require('jsonic')
 
 const Joi = Optioner.Joi
+
+var Errors = require('./lib/errors')
 
 const optioner = Optioner({
   client: true,
   server: false,
-  kv: Joi.object(),
+  kv: Joi.object({
+    get: Joi.func(),
+    set: Joi.func()
+  }),
 })
+
+var error = exports.error = Eraro({
+  package: 'seneca',
+  msgmap: Errors,
+  override: true
+})
+
+
 
 module.exports = function allow(options) {
   const seneca = this
@@ -39,17 +53,69 @@ module.exports = function allow(options) {
   }
 
   function set_perms(msg, reply) {
+    // TODO: this needs a perm check!
     return intern.set_perms(opts, msg, reply)
   }
 
   
   // TODO: seneca.inward would be a better way to do this as guarantees coverage
-  // of all role:entity actions
+  // of all role:entity actions, including those added later
   seneca.wrap('role:entity', allow_entity)
 
+
+  if(opts.pins || opts.pin) {
+    var pins = opts.pins //|| Array.isArray(opts.pin) ? opts.pin : [opts.pin]
+    pins.forEach(function(pin) {
+      seneca.wrap(seneca.util.clean(pin), make_allow_msg(pin.make_activity$))
+    })
+  }
+  
+  
+  // Generic access control for any msg pattern
+  function make_allow_msg(make_activity) {
+    return function allow_msg(msg, reply, meta) {
+      if(!msg.usr) return reply(error('no_user',{msg:msg}))
+
+      var activity, access
+
+      resolve_perms(this, {usr: msg.usr, org: msg.org}, function(err, perms) {
+        if(err) return reply(err)
+
+        activity = intern.extract_pattern_values(meta)
+        activity.usr$ = msg.usr
+        activity.org$ = msg.org
+
+        activity = make_activity(activity, 'in', msg, null, meta)
+        if(activity) {
+          access = perms.find(activity)
+
+          if(!access) {
+            return reply(error('no_in_access',{activity:activity}))
+          }
+        }
+
+        return this.prior(msg, function(err, out, meta) {
+          activity = intern.extract_pattern_values(meta)
+          activity.usr$ = msg.usr
+          activity.org$ = msg.org
+
+          activity = make_activity(activity, 'out', msg, out, meta)
+          if(activity) {
+            access = perms.find(activity)
+            if(!access) {
+              return reply(error('no_out_access',{activity:activity}))
+            }
+          }
+
+          return reply(err, out)
+        })
+      })
+    }
+  }
+  
   
   function allow_entity(msg, reply) {
-    if(!msg.usr) return reply(new Error('no-context'))
+    if(!msg.usr) return reply(error('no_user',{msg:msg}))
 
     resolve_perms(this, {usr: msg.usr, org: msg.org}, function(err, perms) {
       if(err) return reply(err)
@@ -57,12 +123,12 @@ module.exports = function allow(options) {
 
       // case: write operation, ent given
       if('save' === msg.cmd || 'remove' === msg.cmd ) {
-        activity = intern.make_activity(msg, msg.ent)
+        activity = intern.make_entity_activity(msg, msg.ent)
         
         const access = perms.find(activity)
 
         if(!access) {
-          return reply(new Error('no-write-access'))
+          return reply(error('no_write_access',{activity:activity}))
         }
 
         return this.prior(msg, reply)
@@ -70,22 +136,22 @@ module.exports = function allow(options) {
 
       // case: read operation, ent returned
       else if('load' === msg.cmd) {
-        return this.prior(msg, function(err, out) {
+        return this.prior(msg, function(err, out, meta) {
           if(err) return reply(err)
 
           // TODO: is this correct? is this leaking info - should we instead
           // send an explicit not-allowed? it is not-allowed?
           if(!out) return reply()
           
-          activity = intern.make_activity(msg, out)
+          activity = intern.make_entity_activity(msg, out)
 
           const access = perms.find(activity)
 
           if(!access) {
-            return reply(new Error('no-read-access'))
+            return reply(error('no_read_access',{activity:activity}))
           }
 
-          return reply(null, out)
+          return reply(out)
         })
       }
 
@@ -93,7 +159,7 @@ module.exports = function allow(options) {
       else if('list' === msg.cmd) {
 
         // TODO: pull out fields to use in query, as optimization
-        return this.prior(msg, function(err, reslist) {
+        return this.prior(msg, function(err, reslist, meta) {
           if(err) return reply(err)
 
           if(!reslist) return reply()
@@ -101,7 +167,7 @@ module.exports = function allow(options) {
           var list = []
 
           reslist.forEach(function(ent){
-            activity = intern.make_activity(msg, ent)
+            activity = intern.make_entity_activity(msg, ent)
             var access = perms.find(activity)
             
             if(access) {
@@ -126,6 +192,7 @@ module.exports = function allow(options) {
 
     if(found) return done.call(seneca, null, found)
 
+    // TODO: seneca feature: death tolerance, die after x many failed msgs
     seneca.act('role:allow,get:perms', context, function(err, permspec) {
       if(err) return done.call(this, err)
 
@@ -201,6 +268,7 @@ const intern = (module.exports.intern = {
     }    
   },
 
+  // TODO: incorrect: set ops should be set_group, add/rem user from group
   // TODO: this needs protection
   set_perms: function (opts, msg, reply) {
     // TODO: set perms only for usr, and org+group
@@ -208,6 +276,12 @@ const intern = (module.exports.intern = {
     opts.kv.set(key, msg.perms, reply)
   },
 
+
+  init_perms: function() {
+    // TODO: init perms for usr or org
+  },
+  
+  
   make_perms: function (context, permspec) {
     const perms = Patrun()
     if(permspec && permspec.perms) {
@@ -218,11 +292,12 @@ const intern = (module.exports.intern = {
     return perms
   },
 
-  make_activity: function (msg, ent) {
+  make_entity_activity: function (msg, ent) {
     const activity = ent.data$()
 
     var canon = msg.ent.canon$({object:true})
-    
+
+    activity.ent$ = true
     activity.usr$ = msg.usr
     activity.org$ = msg.org
     activity.zone$ = canon.zone
@@ -231,5 +306,10 @@ const intern = (module.exports.intern = {
     activity.cmd$ = msg.cmd
 
     return activity
+  },
+
+
+  extract_pattern_values: function(meta) {
+    return Jsonic(meta.pattern)
   }
 })
