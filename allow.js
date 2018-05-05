@@ -3,7 +3,6 @@
 
 // NEXT: verify network lookup
 // NEXT: LRU, timeout cache
-// NEXT: proper error codes
 
 
 const Optioner = require('optioner')
@@ -213,7 +212,15 @@ const intern = (module.exports.intern = {
   make_key: function(opts, context) {
     const usr = context.usr
     const org = context.org
-    const key = usr+(null==org?'':'~'+org)
+    const key =
+          (null==usr?'':usr)+
+          (null!=usr&&null!=org?'~':'')+
+          (null==org?'':org)
+
+    if('' === key) {
+      throw error('no_key_in_context',{context:context})
+    }
+    
     return key
   },
 
@@ -271,9 +278,10 @@ const intern = (module.exports.intern = {
   // TODO: incorrect: set ops should be set_group, add/rem user from group
   // TODO: this needs protection
   set_perms: function (opts, msg, reply) {
-    // TODO: set perms only for usr, and org+group
-    const key = msg[opts.fields.usr]
-    opts.kv.set(key, msg.perms, reply)
+    const key = intern.make_key(opts, msg)
+    opts.kv.set(key, msg.perms, function() {
+      reply()
+    })
   },
 
 

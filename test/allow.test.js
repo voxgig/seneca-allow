@@ -613,6 +613,31 @@ lab.test('intern-get_perms', fin => {
 })
 
 
+lab.test('intern-make_key', fin => {
+  expect(Plugin.intern.make_key({},{usr:'a'})).equals('a')
+  expect(Plugin.intern.make_key({},{org:'b'})).equals('b')
+  expect(Plugin.intern.make_key({},{usr:'x',org:'y'})).equals('x~y')
+  expect(function(){Plugin.intern.make_key({},{})}).throws()
+  fin()
+})
+
+lab.test('intern-set_perms', fin => {
+  Plugin.intern.set_perms({kv:{set:function(k,v,r) {
+    expect(k).equal('foo')
+    expect(v).equal({p:{usr:'foo',usr$:'foo'},v:true})
+    r()
+  }}}, {usr:'foo', perms:{p:{usr:'foo',usr$:'foo'},v:true}}, next0)
+
+  function next0() {
+    Plugin.intern.set_perms({kv:{set:function(k,v,r) {
+      expect(k).equal('foo~bar')
+      expect(v).equal({p:{a:1},v:true})
+      r()
+    }}}, {usr:'foo', org:'bar', perms:{p:{a:1},v:true}}, fin)
+  }
+})
+
+
 function make_kv(permspecs) {
   return {
     get: function(key, done) {
