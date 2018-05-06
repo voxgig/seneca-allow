@@ -17,10 +17,6 @@ var Errors = require('./lib/errors')
 const optioner = Optioner({
   client: true,
   server: false,
-  kv: Joi.object({
-    get: Joi.func(),
-    set: Joi.func()
-  }),
 })
 
 var error = exports.error = Eraro({
@@ -43,7 +39,9 @@ module.exports = function allow(options) {
 
   if(opts.server) {
     seneca.add('role:allow,get:perms', get_perms)
-    seneca.add('role:allow,set:perms', set_perms)
+    seneca.add('role:allow,get:grps', get_grps)
+    seneca.add('role:allow,upon:perm,op:*', perm_update)
+    seneca.add('role:allow,upon:grp,op:*', grp_update)
   }
 
 
@@ -51,9 +49,18 @@ module.exports = function allow(options) {
     return intern.get_perms(opts, msg, reply)
   }
 
-  function set_perms(msg, reply) {
-    // TODO: this needs a perm check!
-    return intern.set_perms(opts, msg, reply)
+  function get_grps(msg, reply) {
+    return intern.get_grps(opts, msg, reply)
+  }
+
+  // TODO: this needs a perm check!
+  function perm_update(msg, reply) {
+    return intern.perm_update(opts, msg, reply)
+  }
+
+  // TODO: this needs a perm check!
+  function grp_update(msg, reply) {
+    return intern.grp_update(opts, msg, reply)
   }
 
   
@@ -212,10 +219,13 @@ const intern = (module.exports.intern = {
   make_key: function(opts, context) {
     const usr = context.usr
     const org = context.org
+    const grp = context.grp
+
     const key =
-          (null==usr?'':usr)+
-          (null!=usr&&null!=org?'~':'')+
-          (null==org?'':org)
+          null!=grp ? grp :
+          ((null==usr?'':usr)+
+           (null!=usr&&null!=org?'~':'')+
+           (null==org?'':org))
 
     if('' === key) {
       throw error('no_key_in_context',{context:context})
@@ -224,6 +234,17 @@ const intern = (module.exports.intern = {
     return key
   },
 
+
+  get_grps: function (opts, msg, reply) {
+    const key = intern.make_key(opts, msg)
+    opts.kv.get(key, function(err, out) {
+      if(err) return reply(err)
+      const grps = out && out.grps
+      reply(null, {usr:msg.usr, org:msg.org, grps: grps})
+    })
+  },
+
+                
   get_perms: function (opts, msg, reply) {
     // These are identifiers, not string names
     const usr = msg.usr
@@ -236,8 +257,9 @@ const intern = (module.exports.intern = {
     opts.kv.get(usr+'~'+org, function(err, out) {
       if(err) return reply(err)
 
-      if(out && out.groups) {
-        out.groups.forEach(function(grp) {
+      // TODO: rename this field to grps for consistency
+      if(out && out.grps) {
+        out.grps.forEach(function(grp) {
           opts.kv.get(grp, addperm(grp,{usr$:usr,org$:org})) // org's perms
         })
       }
@@ -275,13 +297,37 @@ const intern = (module.exports.intern = {
     }    
   },
 
-  // TODO: incorrect: set ops should be set_group, add/rem user from group
-  // TODO: this needs protection
-  set_perms: function (opts, msg, reply) {
+  perm_update: function (opts, msg, reply) {
+    const ops = {add:'add', rem:'rem'}
+    const op = ops[msg.op]
     const key = intern.make_key(opts, msg)
-    opts.kv.set(key, msg.perms, function() {
-      reply()
-    })
+
+    if(null == op) return reply()
+
+    reply()
+  },
+
+  grp_update: function (opts, msg, reply) {
+    const ops = {add:'add', rem:'rem'}
+    const op = ops[msg.op]
+    const key = intern.make_key(opts, msg)
+
+    if(null == op) return reply()
+
+    if('add' === op) {
+      opts.kv.sadd(
+        key,
+        'grps',
+        msg.grp,
+        {usr$:msg.usr,org$:msg.org},
+        function(err, out) {
+          if(err) return reply(err)
+          reply(null, out)
+        })
+    }
+    else {
+      return reply()
+    }
   },
 
 

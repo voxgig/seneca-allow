@@ -150,8 +150,8 @@ const kv_alice_bob_org0 = make_kv({
     {p:{ent$:true,cmd$:'load'}, v:true}
   ]},
   
-  'alice~org0':{usr$:'alice', org$:'org0', groups: ['admin0']},
-  'bob~org0':{usr$:'bob', org$:'org0', groups: ['read0']},
+  'alice~org0':{usr$:'alice', org$:'org0', grps: ['admin0']},
+  'bob~org0':{usr$:'bob', org$:'org0', grps: ['read0']},
 })
 
 
@@ -270,8 +270,8 @@ lab.test('access-org-field', fin => {
       {p:{ent$:true,cmd$:'load',mark:'a'}, v:true}
     ]},
     
-    'alice~org1':{usr$:'alice', org$:'org1', groups: ['admin0']},
-    'bob~org1':{usr$:'bob', org$:'org1', groups: ['read1']},
+    'alice~org1':{usr$:'alice', org$:'org1', grps: ['admin0']},
+    'bob~org1':{usr$:'bob', org$:'org1', grps: ['read1']},
   })
 
 
@@ -385,9 +385,9 @@ lab.test('access-org-readwrite', fin => {
       {p:{ent$:true,cmd$:'list',mark:'a'}, v:true}
     ]},
     
-    'alice~org2':{usr$:'alice', org$:'org2', groups: ['write-a']},
-    'bob~org2':{usr$:'bob', org$:'org2', groups: ['read-a']},
-    'cathy~org2':{usr$:'cathy', org$:'org2', groups: ['admin']},
+    'alice~org2':{usr$:'alice', org$:'org2', grps: ['write-a']},
+    'bob~org2':{usr$:'bob', org$:'org2', grps: ['read-a']},
+    'cathy~org2':{usr$:'cathy', org$:'org2', grps: ['admin']},
   })
 
 
@@ -539,7 +539,7 @@ lab.test('access-msg', fin => {
       {p:{role:'bar',cmd:'foo'}, v:true},
     ]},
     
-    'alice~org3':{usr$:'alice', org$:'org3', groups: ['canfoo']}
+    'alice~org3':{usr$:'alice', org$:'org3', grps: ['canfoo']}
   })
 
 
@@ -587,7 +587,7 @@ lab.test('intern-get_perms', fin => {
     'g0': {grp:'g0',org$:'aaa',perms:[{p:{color:'red'},v:true}]},
     
     bob: {usr$:'bob',perms:[{p:{usr$:'bob'},v:true}]},
-    'bob~aaa': {usr$:'bob',org$:'aaa',groups:['g0']},
+    'bob~aaa': {usr$:'bob',org$:'aaa',grps:['g0']},
 
   }
   
@@ -614,13 +614,38 @@ lab.test('intern-get_perms', fin => {
 
 
 lab.test('intern-make_key', fin => {
+  // NOTE: this are all IDs, not names
   expect(Plugin.intern.make_key({},{usr:'a'})).equals('a')
   expect(Plugin.intern.make_key({},{org:'b'})).equals('b')
   expect(Plugin.intern.make_key({},{usr:'x',org:'y'})).equals('x~y')
   expect(function(){Plugin.intern.make_key({},{})}).throws()
+  expect(Plugin.intern.make_key({},{grp:'g'})).equals('g')
   fin()
 })
 
+
+lab.test('intern-grp', fin => {
+  const opts = {kv:make_kv({
+    'alice~reds': {usr$:'alice', org$:'reds', grps:['']}
+  })}
+
+  Plugin.intern.get_grps(opts, {usr:'alice', org:'reds'}, function(err, out) {
+    if(err) return fin(err)
+    expect(out).equal({ usr: 'alice', org: 'reds', grps: [ '' ] })
+
+    Plugin.intern.grp_update(
+      opts, {op:'add',usr:'alice', org:'reds', grp:'g0'},
+      function(err, out) {
+        if(err) return fin(err)
+        expect(out).equal({ grps: [ 'g0' ], 'usr$': 'alice', 'org$': 'reds' })
+        fin()
+      })
+  })
+
+
+})
+
+/*
 lab.test('intern-set_perms', fin => {
   Plugin.intern.set_perms({kv:{set:function(k,v,r) {
     expect(k).equal('foo')
@@ -636,14 +661,37 @@ lab.test('intern-set_perms', fin => {
     }}}, {usr:'foo', org:'bar', perms:{p:{a:1},v:true}}, fin)
   }
 })
+*/
 
-
+// TODO: move internal to plugin to provide default in-memory implementation
 function make_kv(permspecs) {
   return {
     get: function(key, done) {
       return setImmediate(function(){
         done(null, _.clone(permspecs[key]))
       })
+    },
+
+    sadd: function(key, prop, val, annot, done) {
+      var obj = permspecs[key]
+
+      if(!obj) {
+        obj = permspecs[key] = {}
+        permspecs[key][prop] = []
+      }
+
+      Object.assign(obj,annot)
+      
+      var set = obj[prop]
+      for(var i = 0; i < set.length; i++) {
+        if(val === set[i]) break;
+      }
+
+      if(i === set.length) {
+        set.push(val)
+      }
+
+      done(null, obj)
     }
   }
 }
