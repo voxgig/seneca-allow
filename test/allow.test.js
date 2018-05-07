@@ -13,16 +13,17 @@ const expect = Code.expect
 const PluginValidator = require('seneca-plugin-validator')
 const Seneca = require('seneca')
 const Plugin = require('..')
+const Store = require('../lib/store')
 
 
 lab.test('validate', PluginValidator(Plugin, module))
 
 
-// NEXT: validate lists
+// NEXT: validate perm op access - all scenarios
 
 
 lab.test('happy', fin => {
-  const kv = make_kv({
+  const permspecs = {
     'aaa': {
       perms: [
         // usr$ is the inbound context, usr is the data field
@@ -35,7 +36,7 @@ lab.test('happy', fin => {
         {p:{usr$:'bbb',usr:'bbb'}, v:true},
       ]
     },
-  })
+  }
 
   Seneca()
     .test('silent')
@@ -43,7 +44,7 @@ lab.test('happy', fin => {
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv
+      permspecs: permspecs
     })
     .ready(function() {
       var aaa = this.delegate({usr:'aaa'})
@@ -76,7 +77,7 @@ lab.test('happy', fin => {
 
 
 lab.test('org-admin', fin => {
-  const kv = make_kv({
+  const permspecs = {
     'ccc': {
       perms: [
         {p:{usr$:'ccc',usr:'ccc'}, v:true},
@@ -91,7 +92,7 @@ lab.test('org-admin', fin => {
         {p:{org$:'QQQ'}, v:true},
       ]
     },
-  })
+  }
 
   Seneca()
     .test('silent')
@@ -99,7 +100,7 @@ lab.test('org-admin', fin => {
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv
+      permspecs: permspecs
     })
     .use(function () {
       this
@@ -139,7 +140,7 @@ lab.test('org-admin', fin => {
 })
 
 
-const kv_alice_bob_org0 = make_kv({
+const permspecs_alice_bob_org0 = {
   'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
   'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
   
@@ -152,7 +153,7 @@ const kv_alice_bob_org0 = make_kv({
   
   'alice~org0':{usr$:'alice', org$:'org0', grps: ['admin0']},
   'bob~org0':{usr$:'bob', org$:'org0', grps: ['read0']},
-})
+}
 
 
 lab.test('resolve_perms', fin => {
@@ -162,7 +163,7 @@ lab.test('resolve_perms', fin => {
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv_alice_bob_org0
+      permspecs: permspecs_alice_bob_org0
     })
     .ready(function() {
       var exp = this.export('allow')
@@ -202,7 +203,7 @@ lab.test('access-org-basic', fin => {
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv_alice_bob_org0
+      permspecs: permspecs_alice_bob_org0
     })
     .use(function () {
       this
@@ -259,7 +260,7 @@ lab.test('access-org-basic', fin => {
 
 lab.test('access-org-field', fin => {
 
-  const kv_alice_bob_org1 = make_kv({
+  const permspecs_alice_bob_org1 = {
     'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
     'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
     
@@ -272,17 +273,15 @@ lab.test('access-org-field', fin => {
     
     'alice~org1':{usr$:'alice', org$:'org1', grps: ['admin0']},
     'bob~org1':{usr$:'bob', org$:'org1', grps: ['read1']},
-  })
+  }
 
-
-  
   Seneca()
     //.test('print')
     .test('silent')
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv_alice_bob_org1
+      permspecs: permspecs_alice_bob_org1
     })
     .use(function () {
       this
@@ -358,7 +357,7 @@ lab.test('access-org-field', fin => {
 
 lab.test('access-org-readwrite', fin => {
 
-  const kv_alice_bob_org2 = make_kv({
+  const permspecs_alice_bob_org2 = {
     'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
     'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
     'cathy': {usr$:'cathy', perms: [{p:{usr$:'catch',usr:'cathy'}, v:true}]},
@@ -388,17 +387,15 @@ lab.test('access-org-readwrite', fin => {
     'alice~org2':{usr$:'alice', org$:'org2', grps: ['write-a']},
     'bob~org2':{usr$:'bob', org$:'org2', grps: ['read-a']},
     'cathy~org2':{usr$:'cathy', org$:'org2', grps: ['admin']},
-  })
+  }
 
-
-  
   Seneca()
     //.test('print')
     .test('silent')
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv_alice_bob_org2
+      permspecs: permspecs_alice_bob_org2
     })
     .use(function () {
       this
@@ -527,7 +524,7 @@ lab.test('access-org-readwrite', fin => {
 
 lab.test('access-msg', fin => {
 
-  const kv_org3 = make_kv({
+  const permspecs_org3 = {
     'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
     'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
     
@@ -540,21 +537,16 @@ lab.test('access-msg', fin => {
     ]},
     
     'alice~org3':{usr$:'alice', org$:'org3', grps: ['canfoo']}
-  })
+  }
 
-
-  
   Seneca()
     //.test('print')
     .test('silent')
     .use('entity')
     .use(Plugin, {
       server: true,
-      kv: kv_org3,
-      pins:[
-        {role:'bar',cmd:'foo',
-         make_activity$:function(activity){return activity}}
-      ]
+      permspecs: permspecs_org3,
+      pins:[{role:'bar',cmd:'foo'}]
     })
     .add('role:bar,cmd:foo', function(msg, reply) {
       reply({zed:msg.zed})
@@ -591,15 +583,13 @@ lab.test('intern-get_perms', fin => {
 
   }
   
-  const opts = {
-    kv: make_kv(permspecs)
-  }
+  const store = Store({permspecs:permspecs})
 
-  Plugin.intern.get_perms(opts,{usr:'alice'},function(err,out){
+  Plugin.intern.get_perms(store,{usr:'alice'},function(err,out){
     if(err) return fin(err)
     expect(out.perms[0].p.usr$).equal('alice')
 
-    Plugin.intern.get_perms(opts,{usr:'bob', org:'aaa'},function(err,out){
+    Plugin.intern.get_perms(store,{usr:'bob', org:'aaa'},function(err,out){
       if(err) return fin(err)
       //console.dir(out,{depth:null})
       expect(out.perms[0].p.usr$).equal('bob')
@@ -613,86 +603,437 @@ lab.test('intern-get_perms', fin => {
 })
 
 
-lab.test('intern-make_key', fin => {
+lab.test('intern-make_perms_key', fin => {
   // NOTE: this are all IDs, not names
-  expect(Plugin.intern.make_key({},{usr:'a'})).equals('a')
-  expect(Plugin.intern.make_key({},{org:'b'})).equals('b')
-  expect(Plugin.intern.make_key({},{usr:'x',org:'y'})).equals('x~y')
-  expect(function(){Plugin.intern.make_key({},{})}).throws()
-  expect(Plugin.intern.make_key({},{grp:'g'})).equals('g')
+  expect(Plugin.intern.make_perms_key({usr:'a'})).equals('a')
+  expect(Plugin.intern.make_perms_key({org:'b'})).equals('b')
+  expect(Plugin.intern.make_perms_key({usr:'x',org:'y'})).equals('x~y')
+  expect(function(){Plugin.intern.make_perms_key({})}).throws()
+  expect(Plugin.intern.make_perms_key({grp:'g'})).equals('g')
+  fin()
+})
+
+lab.test('intern-make_grps_key', fin => {
+  // NOTE: this are all IDs, not names
+  expect(Plugin.intern.make_grps_key({usr:'a',org:'b'})).equals('a~b')
+  expect(function(){Plugin.intern.make_grps_key({})}).throws()
+  expect(function(){Plugin.intern.make_grps_key({usr:'a'})}).throws()
+  expect(function(){Plugin.intern.make_grps_key({org:'b'})}).throws()
+  expect(function(){Plugin.intern.make_grps_key({usr:'',org:'b'})}).throws()
+  expect(function(){Plugin.intern.make_grps_key({usr:'a',org:''})}).throws()
+  expect(function(){Plugin.intern.make_grps_key({grp:'c'})}).throws()
   fin()
 })
 
 
 lab.test('intern-grp', fin => {
-  const opts = {kv:make_kv({
-    'alice~reds': {usr$:'alice', org$:'reds', grps:['']}
-  })}
+  var store = Store({permspecs:{
+    'alice~reds': {usr$:'alice', org$:'reds', grps:['g0']}
+  }})
 
-  Plugin.intern.get_grps(opts, {usr:'alice', org:'reds'}, function(err, out) {
+  Plugin.intern.get_grps(store, {usr:'alice', org:'reds'}, function(err, out) {
     if(err) return fin(err)
-    expect(out).equal({ usr: 'alice', org: 'reds', grps: [ '' ] })
+    expect(out).equal({ usr: 'alice', org: 'reds', grps: [ 'g0' ] })
 
     Plugin.intern.grp_update(
-      opts, {op:'add',usr:'alice', org:'reds', grp:'g0'},
+      store, {op:'add',tusr:'alice', torg:'reds', tgrp:'g1'},
       function(err, out) {
         if(err) return fin(err)
-        expect(out).equal({ grps: [ 'g0' ], 'usr$': 'alice', 'org$': 'reds' })
-        fin()
+        expect(out).equal({ grps: [ 'g0', 'g1' ], 'usr$': 'alice', 'org$': 'reds' })
+
+        Plugin.intern.grp_update(
+          store, {op:'rem',tusr:'alice', torg:'reds', tgrp:'g0'},
+          function(err, out) {
+            if(err) return fin(err)
+            expect(out).equal({ grps: [ 'g1' ], 'usr$': 'alice', 'org$': 'reds' })
+
+            fin()
+          })
       })
+  })
+})
+
+
+lab.test('intern-perm', fin => {
+  var store = Store()
+
+  Plugin.intern.perm_update(
+    store,
+    {tusr:'alice', op:'add',
+     perm:{p:{ent$:true, usr$:'alice', usr:'alice'},v:true}},
+    function(err, out) {
+      if(err) return fin(err)
+      //console.dir(out,{depth:null})
+      expect(out).equal({ perms: [ { p: { 'ent$': true, 'usr$': 'alice', usr: 'alice' }, v: true } ], 'usr$': 'alice' })
+
+      // Maintain uniqueness
+      Plugin.intern.perm_update(
+        store,
+        {tusr:'alice', op:'add',
+         perm:{p:{ent$:true, usr$:'alice', usr:'alice'},v:true}},
+        function(err, out) {
+          if(err) return fin(err)
+          //console.dir(out,{depth:null})
+          expect(out).equal({ perms: [ { p: { 'ent$': true, 'usr$': 'alice', usr: 'alice' }, v: true } ], 'usr$': 'alice' })
+
+          do_grp()
+        })
+    })
+
+  function do_grp() {
+    Plugin.intern.perm_update(
+      store,
+      {tgrp:'g0', op:'add',
+       perm:{p:{ent$:true, cmd$:'load'},v:true}},
+      function(err, out) {
+        if(err) return fin(err)
+        //console.dir(out,{depth:null})
+        expect(out).equal({ perms: [ { p: { 'ent$': true, 'cmd$': 'load' }, v: true } ], 'grp$': 'g0' })
+
+        Plugin.intern.perm_update(
+          store,
+          {tgrp:'g0', op:'add',
+           perm:{p:{ent$:true, cmd$:'save'},v:true}},
+          function(err, out) {
+            if(err) return fin(err)
+            //console.dir(out,{depth:null})
+            expect(out).equal({ perms: 
+                                [ { p: { 'ent$': true, 'cmd$': 'load' }, v: true },
+                                  { p: { 'ent$': true, 'cmd$': 'save' }, v: true } ],
+                                'grp$': 'g0' })
+            
+
+
+            Plugin.intern.perm_update(
+              store,
+              {tgrp:'g0', op:'add',
+               perm:{p:{ent$:true, cmd$:'list'},v:true}},
+              function(err, out) {
+                if(err) return fin(err)
+                //console.dir(out,{depth:null})
+                expect(out).equal({
+                  perms: 
+                  [ { p: { 'ent$': true, 'cmd$': 'load' }, v: true },
+                    { p: { 'ent$': true, 'cmd$': 'save' }, v: true },
+                    { p: { 'ent$': true, 'cmd$': 'list' }, v: true } ],
+                  'grp$': 'g0' })
+
+                Plugin.intern.perm_update(
+                  store,
+                  {tgrp:'g0', op:'rem',
+                   perm:{p:{ent$:true, cmd$:'save'},v:true}},
+                  function(err, out) {
+                    if(err) return fin(err)
+                    //console.dir(out,{depth:null})
+                    expect(out).equal({
+                      perms: 
+                      [ { p: { 'ent$': true, 'cmd$': 'load' }, v: true },
+                        { p: { 'ent$': true, 'cmd$': 'list' }, v: true } ],
+                      'grp$': 'g0' })
+                
+                    fin()
+                  })
+              })
+          })
+      })
+    }
   })
 
 
-})
 
-/*
-lab.test('intern-set_perms', fin => {
-  Plugin.intern.set_perms({kv:{set:function(k,v,r) {
-    expect(k).equal('foo')
-    expect(v).equal({p:{usr:'foo',usr$:'foo'},v:true})
-    r()
-  }}}, {usr:'foo', perms:{p:{usr:'foo',usr$:'foo'},v:true}}, next0)
-
-  function next0() {
-    Plugin.intern.set_perms({kv:{set:function(k,v,r) {
-      expect(k).equal('foo~bar')
-      expect(v).equal({p:{a:1},v:true})
-      r()
-    }}}, {usr:'foo', org:'bar', perms:{p:{a:1},v:true}}, fin)
-  }
-})
-*/
-
-// TODO: move internal to plugin to provide default in-memory implementation
-function make_kv(permspecs) {
-  return {
-    get: function(key, done) {
-      return setImmediate(function(){
-        done(null, _.clone(permspecs[key]))
-      })
+lab.test('store', fin => {
+  const permspecs = {
+    'aaa': {
+      perms: [
+        // usr$ is the inbound context, usr is the data field
+        // they must match to give use access to own data
+        {p:{usr$:'aaa',usr:'aaa'}, v:true},
+      ]
     },
-
-    sadd: function(key, prop, val, annot, done) {
-      var obj = permspecs[key]
-
-      if(!obj) {
-        obj = permspecs[key] = {}
-        permspecs[key][prop] = []
-      }
-
-      Object.assign(obj,annot)
-      
-      var set = obj[prop]
-      for(var i = 0; i < set.length; i++) {
-        if(val === set[i]) break;
-      }
-
-      if(i === set.length) {
-        set.push(val)
-      }
-
-      done(null, obj)
-    }
+    'bbb': {
+      perms: [
+        {p:{usr$:'bbb',usr:'bbb'}, v:true},
+      ]
+    },
   }
-}
 
+  Seneca()
+    .test('silent')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+    })
+
+    .use(function extstore() {
+      this.add('init:extstore', function(msg, reply) {
+        var store = Store({tag:'loaded',permspecs:permspecs})
+        this.export('allow').store(store)
+        reply()
+      })
+    })
+
+    .ready(function() {
+      expect(this.export('allow').store().tag).equal('loaded')
+
+      var aaa = this.delegate({usr:'aaa'})
+      var bbb = this.delegate({usr:'bbb'})
+
+      aaa
+        .make$('foo', {id$:1, mark:'a', usr:'aaa'})
+        .save$(function (err, foo, meta) {
+          if(err) return fin(err)
+          expect(foo.mark).equal('a')
+          expect(meta).exists()
+          
+          aaa
+            .make$('foo')
+            .load$(1,function (err, foo2) {
+              expect(foo2.mark).equal('a')
+              expect(foo2.id).equal(foo.id)
+              
+              bbb
+                .make$('foo')
+                .load$(1,function (err, foo) {
+                  expect(err.code).equal('no_read_access')
+                  expect(foo).not.exist()
+                  fin()
+                })
+            })
+        })
+    })
+})
+
+
+lab.test('network', fin => {
+  const permspecs = {
+    'aaa': {
+      perms: [
+        {p:{usr$:'aaa',usr:'aaa'}, v:true},
+      ]
+    },
+    'bbb': {
+      perms: [
+        {p:{usr$:'bbb',usr:'bbb'}, v:true},
+      ]
+    },
+  }
+
+  Seneca({tag:'server'})
+    .test('silent')
+    //.test('print')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+      permspecs: permspecs
+    })
+    .listen({pin:{role:'allow'}})
+
+  Seneca({tag:'client'})
+    .test('silent')
+    //.test('print')
+    .use('entity')
+    .use(Plugin)
+    .client({pin:{role:'allow'}})
+    .ready(function() {
+      var aaa = this.delegate({usr:'aaa'})
+      var bbb = this.delegate({usr:'bbb'})
+
+      aaa
+        .make$('foo', {id$:1, mark:'a', usr:'aaa'})
+        .save$(function (err, foo, meta) {
+          if(err) return fin(err)
+          expect(foo.mark).equal('a')
+          expect(meta).exists()
+          
+          aaa
+            .make$('foo')
+            .load$(1,function (err, foo2) {
+              expect(foo2.mark).equal('a')
+              expect(foo2.id).equal(foo.id)
+              
+              bbb
+                .make$('foo')
+                .load$(1,function (err, foo) {
+                  expect(err.code).equal('no_read_access')
+                  expect(foo).not.exist()
+                  fin()
+                })
+            })
+        })
+    })
+})
+
+
+
+lab.test('perm-access', fin => {
+  // TODO: admin users in org can set perms for others
+  // TODO: normal users in org cannot set perms for others
+  // TODO: normal users in org can set perms for specific ents
+
+  const permspecs = {
+    'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
+    'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
+    'cathy': {usr$:'cathy', perms: [{p:{usr$:'catch',usr:'cathy'}, v:true}]},
+    
+    'greens': {org$:'greens', perms: [{p:{org$:'greens'}, v:false}]},
+
+    // the admin group for greens
+    'admin': {grp$:'admin', org$:'greens', perms: [
+      {p:{org$:'greens'}, v:true},
+    ]},
+
+    'owner': {grp$:'owner', org$:'greens', perms: [
+      {p:{role:'allow',upon:'grp',op:'*',org$:'greens'}, v:true},
+      {p:{ent$:true,cmd$:'*',org$:'greens'}, v:true},
+    ]},
+
+    'owner-bar-a': {grp$:'owner-bar-a', org$:'greens', perms: [
+      {p:{role:'allow',upon:'grp',op:'*',org$:'greens',grp$:'write-bar-a'}, v:true},
+      {p:{ent$:true,cmd$:'*',org$:'greens',name$:'bar',mark:'a'}, v:true},
+    ]},
+
+    'write': {grp$:'write', org$:'greens', perms: [
+      {p:{ent$:true,cmd$:'*',org$:'greens'}, v:true},
+    ]},
+
+    'write-bar-a': {grp$:'write-bar-a', org$:'greens', perms: [
+      {p:{ent$:true,cmd$:'*',org$:'greens',name$:'bar',mark:'a'}, v:true},
+    ]},
+
+    'alice~greens':{usr$:'alice', org$:'greens', grps: ['admin']},
+  }
+
+
+  Seneca()
+    //.test('print')
+    .test('silent')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+      permspecs: permspecs,
+      pins:[
+        {role:'allow',upon:'grp',op:'*',
+         make_activity$:function(activity,mode,msg){
+           activity.org$ = msg.torg
+           activity.grp$ = msg.tgrp
+           activity.op = msg.op
+           return activity
+         }
+        }
+      ]
+
+    })
+    .use(function () {
+      this
+        .add('role:entity,cmd:save',function(msg,reply){
+          msg.ent.usr = msg.usr
+          msg.ent.org = msg.org
+          this.prior(msg,reply)
+        })
+    })
+    .ready(function() {
+      var alice = this.delegate({usr:'alice', org:'greens'})
+      var bob   = this.delegate({usr:'bob', org:'greens'})
+      var cathy = this.delegate({usr:'cathy', org:'greens'})
+      var derek = this.delegate({usr:'derek', org:'greens'})
+      var eoin  = this.delegate({usr:'eoin', org:'greens'})
+
+      alice.make$('foo',{id$:1,a:1}).save$(function(err, out) {
+        if(err) return fin(err)
+        expect(out.a).equal(1)
+
+        bob.act(
+          'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:greens',
+          function(err, out) {
+            expect(err.code).equal('no_in_access')
+
+            alice.act(
+              'role:allow,upon:grp,op:add,tgrp:owner,tusr:bob,torg:greens',
+              function(err, out) {
+                expect(out)
+                  .equal({ grps: [ 'owner' ], 'usr$': 'bob', 'org$': 'greens' })
+
+                alice.act(
+                  'role:allow,upon:grp,op:add,tgrp:owner,tusr:bob,torg:blues',
+                  function(err, out) {
+                    expect(err.code).equal('no_in_access')
+
+                    do_owner_bob()
+                  })
+              })
+          })
+      })
+
+      function do_owner_bob() {
+        //console.dir(bob.export('allow').store().data(),{depth:null})
+
+        /*
+        bob.act('role:allow,get:perms', function(err, out){
+          console.dir(out,{depth:null})
+          return fin()
+        })
+        */
+
+        bob.act(
+          'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:greens',
+          function(err, out) {
+            expect(out)
+              .equal({ grps: [ 'write' ], 'usr$': 'cathy', 'org$': 'greens' })
+            expect(this.export('allow').store().data()['cathy~greens'].grps)
+              .equal(['write'])
+
+            this.act(
+              'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:blues',
+              function(err, out) {
+                expect(err.code).equal('no_in_access')
+
+                // cathy can write as in `write` group
+                cathy.make$('foo',{id$:2,a:2}).save$(function(err, out) {
+                  if(err) return fin(err)
+                  expect(out.a).equal(2)
+                
+                  do_bar()
+                })
+              })
+          })
+      }
+
+      function do_bar() {
+        eoin.make$('bar',{id$:1,mark:'a'}).save$(function(err, out) {
+          expect(err).exist()
+          
+          alice.act(
+            'role:allow,upon:grp,op:add,tgrp:owner-bar-a,tusr:derek,torg:greens',
+            function(err, out) {
+              expect(out)
+                .equal({ grps: [ 'owner-bar-a' ], 'usr$': 'derek', 'org$': 'greens' })
+
+              derek.act(
+                'role:allow,upon:grp,op:add,tgrp:write,tusr:eoin,torg:greens',
+                function(err, out) {
+                  expect(err.code).equal('no_in_access')
+
+                  derek.act(
+                    'role:allow,upon:grp,op:add,'+
+                      'tgrp:write-bar-a,tusr:eoin,torg:greens',
+                    function(err, out) {
+                      expect(out).equal({ grps: [ 'write-bar-a' ],
+                                          'usr$': 'eoin', 'org$': 'greens' })
+
+                      eoin.make$('bar',{id$:1,mark:'a'}).save$(function(err, out) {
+                        expect(out.mark).equal('a')
+
+                        eoin.make$('bar',{id$:2,mark:'b'}).save$(function(err, out) {
+                          expect(err.code).equal('no_write_access')
+
+                          //console.dir(alice.export('allow').store().data(),{depth:null})
+                          fin()
+                        })
+                      })
+                    })
+                })
+            })
+        })
+      }
+    })
+})

@@ -1,8 +1,8 @@
 /* Copyright (c) 2018 voxgig and other contributors, MIT License */
 'use strict'
 
-// NEXT: verify network lookup
-// NEXT: LRU, timeout cache
+
+// NEXT: LRU, timeout cache, and clearance events
 
 
 const Optioner = require('optioner')
@@ -13,6 +13,7 @@ const Jsonic = require('jsonic')
 const Joi = Optioner.Joi
 
 var Errors = require('./lib/errors')
+var Store = require('./lib/store')
 
 const optioner = Optioner({
   client: true,
@@ -33,34 +34,33 @@ module.exports = function allow(options) {
 
   // TODO: just a cache, should be time limited
   // and accept inbound msgs to update if changes made to stored perms
-  const perms = {}
+  // const perms_cache = {}
 
-  const kv = options.kv
-
+  var store = Store({tag:'mem',permspecs:opts.permspecs})
+  
   if(opts.server) {
     seneca.add('role:allow,get:perms', get_perms)
     seneca.add('role:allow,get:grps', get_grps)
     seneca.add('role:allow,upon:perm,op:*', perm_update)
     seneca.add('role:allow,upon:grp,op:*', grp_update)
   }
-
-
+  
   function get_perms(msg, reply) {
-    return intern.get_perms(opts, msg, reply)
+    return intern.get_perms(store, msg, reply)
   }
 
   function get_grps(msg, reply) {
-    return intern.get_grps(opts, msg, reply)
+    return intern.get_grps(store, msg, reply)
   }
 
   // TODO: this needs a perm check!
   function perm_update(msg, reply) {
-    return intern.perm_update(opts, msg, reply)
+    return intern.perm_update(store, msg, reply)
   }
 
   // TODO: this needs a perm check!
   function grp_update(msg, reply) {
-    return intern.grp_update(opts, msg, reply)
+    return intern.grp_update(store, msg, reply)
   }
 
   
@@ -70,9 +70,12 @@ module.exports = function allow(options) {
 
 
   if(opts.pins || opts.pin) {
+    // TODO fix this
     var pins = opts.pins //|| Array.isArray(opts.pin) ? opts.pin : [opts.pin]
     pins.forEach(function(pin) {
-      seneca.wrap(seneca.util.clean(pin), make_allow_msg(pin.make_activity$))
+      seneca.wrap(seneca.util.clean(pin),
+                  make_allow_msg( pin.make_activity$ ||
+                                  function(activity){return activity}))
     })
   }
   
@@ -87,11 +90,15 @@ module.exports = function allow(options) {
       resolve_perms(this, {usr: msg.usr, org: msg.org}, function(err, perms) {
         if(err) return reply(err)
 
+        //console.log('AM perms', perms)
+        
         activity = intern.extract_pattern_values(meta)
         activity.usr$ = msg.usr
         activity.org$ = msg.org
 
         activity = make_activity(activity, 'in', msg, null, meta)
+        //console.log('AM activity', activity)
+
         if(activity) {
           access = perms.find(activity)
 
@@ -193,16 +200,19 @@ module.exports = function allow(options) {
 
 
   function resolve_perms(seneca, context, done) {
-    const key = intern.make_key(opts, context)
-    var found = perms[key]
-
-    if(found) return done.call(seneca, null, found)
+    const key = intern.make_perms_key(context)
+    var found
+    
+    // TODO: only use cache when you can clear it!
+    //var found = perms_cache[key]
+    //if(found) return done.call(seneca, null, found)
 
     // TODO: seneca feature: death tolerance, die after x many failed msgs
     seneca.act('role:allow,get:perms', context, function(err, permspec) {
       if(err) return done.call(this, err)
 
-      found = perms[key] = intern.make_perms(context, permspec)
+      //found = perms_cache[key] = intern.make_perms(context, permspec)
+      found = intern.make_perms(context, permspec)
       return done.call(seneca, null, found)
     })
   }
@@ -210,13 +220,18 @@ module.exports = function allow(options) {
 
   return {
     export: {
-      resolve_perms: resolve_perms
+      resolve_perms: resolve_perms,
+
+      // TODO: seneca plugin lifecycle does not support post init action hooks
+      store: function(set_store) {
+        return store = (set_store ? set_store : store)
+      }
     }
   }
 }
 
 const intern = (module.exports.intern = {
-  make_key: function(opts, context) {
+  make_perms_key: function(context) {
     const usr = context.usr
     const org = context.org
     const grp = context.grp
@@ -234,10 +249,24 @@ const intern = (module.exports.intern = {
     return key
   },
 
+  make_grps_key: function(context) {
+    var usr = context.usr
+    var org = context.org
 
-  get_grps: function (opts, msg, reply) {
-    const key = intern.make_key(opts, msg)
-    opts.kv.get(key, function(err, out) {
+    usr = '' === usr ? null : usr
+    org = '' === org ? null : org
+    
+    if(null == usr || null == org) {
+      throw error('non_empty_usr_org_required',{context:context})
+    }
+    
+    return usr+'~'+org
+  },
+
+
+  get_grps: function (store, msg, reply) {
+    const key = intern.make_grps_key(msg)
+    store.get(key, function(err, out) {
       if(err) return reply(err)
       const grps = out && out.grps
       reply(null, {usr:msg.usr, org:msg.org, grps: grps})
@@ -245,7 +274,7 @@ const intern = (module.exports.intern = {
   },
 
                 
-  get_perms: function (opts, msg, reply) {
+  get_perms: function (store, msg, reply) {
     // These are identifiers, not string names
     const usr = msg.usr
     const org = msg.org
@@ -254,19 +283,19 @@ const intern = (module.exports.intern = {
     var waiting = 0
     
     // user's groups in this org
-    opts.kv.get(usr+'~'+org, function(err, out) {
+    store.get(usr+'~'+org, function(err, out) {
       if(err) return reply(err)
 
       // TODO: rename this field to grps for consistency
       if(out && out.grps) {
         out.grps.forEach(function(grp) {
-          opts.kv.get(grp, addperm(grp,{usr$:usr,org$:org})) // org's perms
+          store.get(grp, addperm(grp,{usr$:usr,org$:org})) // org's perms
         })
       }
     }) 
     
-    opts.kv.get(usr, addperm('usr')) // user's perms
-    opts.kv.get(org, addperm('org'),{usr$:usr}) // org's perms
+    store.get(usr, addperm('usr')) // user's perms
+    store.get(org, addperm('org'),{usr$:usr}) // org's perms
 
     function addperm(what,context) {
       waiting++
@@ -297,29 +326,84 @@ const intern = (module.exports.intern = {
     }    
   },
 
-  perm_update: function (opts, msg, reply) {
+  perm_update: function (store, msg, reply) {
     const ops = {add:'add', rem:'rem'}
     const op = ops[msg.op]
-    const key = intern.make_key(opts, msg)
-
+    const perm = msg.perm
+    
     if(null == op) return reply()
 
-    reply()
+    if(null == perm.p || null == perm.v) {
+      throw error('invalid_perm',{perm:perm})
+    }
+
+    const annot = {}
+    if(null != msg.tusr) annot.usr$ = msg.tusr
+    if(null != msg.torg) annot.org$ = msg.torg
+    if(null != msg.tgrp) annot.grp$ = msg.tgrp
+
+    const key = intern.make_perms_key({
+      usr: msg.tusr, org: msg.torg, grp: msg.tgrp
+    })
+
+    //delete perms_cache[key]    
+    
+    if('add' === op) {
+      store.sadd(
+        key,
+        'perms',
+        perm,
+        annot,
+        function(err, out) {
+          if(err) return reply(err)
+          reply(null, out)
+        })
+    }
+    else if('rem' === op) {
+      store.srem(
+        key,
+        'perms',
+        perm,
+        annot,
+        function(err, out) {
+          if(err) return reply(err)
+          reply(null, out)
+        })
+    }
+    else {
+      reply()
+    }
   },
 
-  grp_update: function (opts, msg, reply) {
+  grp_update: function (store, msg, reply) {
     const ops = {add:'add', rem:'rem'}
     const op = ops[msg.op]
-    const key = intern.make_key(opts, msg)
+    const tgrp = msg.tgrp
+    const key = intern.make_grps_key({usr: msg.tusr, org: msg.torg})
 
     if(null == op) return reply()
 
+    if(null == tgrp || '' == tgrp) {
+      throw error('invalid_perm',{perm:perm})
+    }
+
     if('add' === op) {
-      opts.kv.sadd(
+      store.sadd(
         key,
         'grps',
-        msg.grp,
-        {usr$:msg.usr,org$:msg.org},
+        tgrp,
+        {usr$:msg.tusr,org$:msg.torg},
+        function(err, out) {
+          if(err) return reply(err)
+          reply(null, out)
+        })
+    }
+    else if('rem' === op) {
+      store.srem(
+        key,
+        'grps',
+        tgrp,
+        {usr$:msg.tusr,org$:msg.torg},
         function(err, out) {
           if(err) return reply(err)
           reply(null, out)
@@ -337,7 +421,7 @@ const intern = (module.exports.intern = {
   
   
   make_perms: function (context, permspec) {
-    const perms = Patrun()
+    const perms = Patrun({gex: true})
     if(permspec && permspec.perms) {
       permspec.perms.forEach(function(perm) {
         perms.add(perm.p,perm.v)
