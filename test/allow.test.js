@@ -76,6 +76,60 @@ lab.test('happy', fin => {
 })
 
 
+lab.test('edges', fin => {
+  const permspecs = {}
+
+  Seneca()
+    .test(fin)
+    //.test('print')
+    .use('entity')
+    .use(Plugin, {
+      server: true,
+      permspecs: permspecs
+    })
+    .ready(function() {
+      var aaa = this.delegate({usr:'aaa'})
+      var bbb = this.delegate({usr:'bbb'})
+
+      // creates an entry for the 'aaa' user
+      // by default user owns anything they create
+      this.act(
+        'role:allow,upon:perm,op:add,tusr:aaa',
+        {perm:{p:{usr$:'aaa',usr:'aaa'},v:true}},
+        function(err, out) {
+          expect(out)
+            .equal({ perms: [ { p: { 'usr$': 'aaa', usr: 'aaa' }, v: true } ],
+                     'usr$': 'aaa' })
+          expect(d(this).aaa).equal(out)
+
+          // creates a group 'nopermsatall' with no perms
+          // as null == perm param
+          this.act(
+            'role:allow,upon:perm,op:add,tgrp:nopermsatall',
+            function(err, out) {
+              expect(out).equal({ perms: [], 'grp$': 'nopermsatall' })
+              expect(d(this).nopermsatall).equal(out)
+
+              // creates an entry for the 'purples' org
+              // by default all perms denied, forces whitelist
+              this.act(
+                'role:allow,upon:perm,op:add,torg:purples',
+                {perm:{p:{org$:'purples'},v:false}},
+                function(err, out) {
+                  expect(out)
+                    .equal({ perms: [ { p: { 'org$': 'purples' }, v: false } ],
+                             'org$': 'purples' })
+                  expect(d(this).purples).equal(out)
+              
+                  fin()
+                })
+            })
+        })
+    })
+})
+
+
+
 lab.test('org-admin', fin => {
   const permspecs = {
     'ccc': {
@@ -871,10 +925,16 @@ lab.test('perm-access', fin => {
   // TODO: normal users in org can set perms for specific ents
 
   const permspecs = {
+    // alice will an admin for 'greens' org
     'alice': {usr$:'alice', perms: [{p:{usr$:'alice',usr:'alice'}, v:true}]},
+
+    // bob is an 'owner' for 'greens' org - can assign groups
     'bob': {usr$:'bob', perms: [{p:{usr$:'bob',usr:'bob'}, v:true}]},
+
+    // cathy is a user for 'greens' assigned to groups by bob
     'cathy': {usr$:'cathy', perms: [{p:{usr$:'catch',usr:'cathy'}, v:true}]},
-    
+
+    // an organisation
     'greens': {org$:'greens', perms: [{p:{org$:'greens'}, v:false}]},
 
     // the admin group for greens
@@ -882,24 +942,30 @@ lab.test('perm-access', fin => {
       {p:{org$:'greens'}, v:true},
     ]},
 
+    // the owner group for greens: full ent access; can assign groups
     'owner': {grp$:'owner', org$:'greens', perms: [
       {p:{role:'allow',upon:'grp',op:'*',org$:'greens'}, v:true},
       {p:{ent$:true,cmd$:'*',org$:'greens'}, v:true},
     ]},
 
+    // the owner group for 'bar' ents with field mark=a in 'greens':
+    // ent access only to bar{mark=a}; assign only group 'write-bar-a'
     'owner-bar-a': {grp$:'owner-bar-a', org$:'greens', perms: [
       {p:{role:'allow',upon:'grp',op:'*',org$:'greens',grp$:'write-bar-a'}, v:true},
       {p:{ent$:true,cmd$:'*',org$:'greens',name$:'bar',mark:'a'}, v:true},
     ]},
 
+    // write group for 'greens'
     'write': {grp$:'write', org$:'greens', perms: [
       {p:{ent$:true,cmd$:'*',org$:'greens'}, v:true},
     ]},
 
+    // write group for 'greens', but only on ent bar with field mark=a
     'write-bar-a': {grp$:'write-bar-a', org$:'greens', perms: [
       {p:{ent$:true,cmd$:'*',org$:'greens',name$:'bar',mark:'a'}, v:true},
     ]},
 
+    // alice group assignments in 'greens'
     'alice~greens':{usr$:'alice', org$:'greens', grps: ['admin']},
   }
 
@@ -912,6 +978,7 @@ lab.test('perm-access', fin => {
       server: true,
       permspecs: permspecs,
       pins:[
+        // activity construction for group assignments
         {role:'allow',upon:'grp',op:'*',
          make_activity$:function(activity,mode,msg){
            activity.org$ = msg.torg
@@ -924,6 +991,7 @@ lab.test('perm-access', fin => {
 
     })
     .use(function () {
+      // set usr and org fields on an ent when saving
       this
         .add('role:entity,cmd:save',function(msg,reply){
           msg.ent.usr = msg.usr
@@ -937,22 +1005,27 @@ lab.test('perm-access', fin => {
       var cathy = this.delegate({usr:'cathy', org:'greens'})
       var derek = this.delegate({usr:'derek', org:'greens'})
       var eoin  = this.delegate({usr:'eoin', org:'greens'})
+      var fred  = this.delegate({usr:'fred', org:'greens'})
 
+      // alice can save anything
       alice.make$('foo',{id$:1,a:1}).save$(function(err, out) {
         if(err) return fin(err)
         expect(out.a).equal(1)
 
+        // bob cannot yet add cathy to write group
         bob.act(
           'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:greens',
           function(err, out) {
             expect(err.code).equal('no_in_access')
 
+            // alice adds bob to owner group in org greens
             alice.act(
               'role:allow,upon:grp,op:add,tgrp:owner,tusr:bob,torg:greens',
               function(err, out) {
                 expect(out)
                   .equal({ grps: [ 'owner' ], 'usr$': 'bob', 'org$': 'greens' })
 
+                // alice can't access 'blues' org, she's only an admin for 'greens'
                 alice.act(
                   'role:allow,upon:grp,op:add,tgrp:owner,tusr:bob,torg:blues',
                   function(err, out) {
@@ -966,36 +1039,87 @@ lab.test('perm-access', fin => {
 
       function do_owner_bob() {
         //console.dir(bob.export('allow').store().data(),{depth:null})
-
-        /*
+        
         bob.act('role:allow,get:perms', function(err, out){
-          console.dir(out,{depth:null})
-          return fin()
-        })
-        */
+          expect(out.perms).equal([
+            // from bob
+            { p: { 'usr$': 'bob', usr: 'bob' }, v: true },
 
-        bob.act(
-          'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:greens',
-          function(err, out) {
-            expect(out)
-              .equal({ grps: [ 'write' ], 'usr$': 'cathy', 'org$': 'greens' })
-            expect(this.export('allow').store().data()['cathy~greens'].grps)
-              .equal(['write'])
+            // from org
+            { p: { 'org$': 'greens' }, v: false },
 
-            this.act(
-              'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:blues',
-              function(err, out) {
-                expect(err.code).equal('no_in_access')
+            // from owner group
+            { p: { role: 'allow', upon: 'grp', op: '*',
+                   'org$': 'greens', 'usr$': 'bob' }, v: true },
+            { p: { 'ent$': true, 'cmd$': '*', 'org$': 'greens', 'usr$': 'bob' },
+              v: true } ])
 
-                // cathy can write as in `write` group
-                cathy.make$('foo',{id$:2,a:2}).save$(function(err, out) {
-                  if(err) return fin(err)
-                  expect(out.a).equal(2)
-                
-                  do_bar()
+          // assign cathy to write group
+          bob.act(
+            'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:greens',
+            function(err, out) {
+              expect(out)
+                .equal({ grps: [ 'write' ], 'usr$': 'cathy', 'org$': 'greens' })
+              expect(this.export('allow').store().data()['cathy~greens'].grps)
+                .equal(['write'])
+              
+              // can't assign cathy to write group in 'blues' org
+              this.act(
+                'role:allow,upon:grp,op:add,tgrp:write,tusr:cathy,torg:blues',
+                function(err, out) {
+                  expect(err.code).equal('no_in_access')
+                  
+                  // cathy can write as in `write` group
+                  cathy.make$('foo',{id$:2,a:2}).save$(function(err, out) {
+                    if(err) return fin(err)
+                    expect(out.a).equal(2)
+
+                    // bob creates a read group
+                    // IRL you'll need to add cmd:list too as another msg
+                    bob.act(
+                      'role:allow,upon:perm,op:add,tgrp:read,torg:greens',
+                      {perm:{ p: { 'ent$': true, 'cmd$': 'load',
+                                   'org$': 'greens' },
+                              v: true }},
+                      function(err, out) {
+                        expect(out).equal(
+                          { perms: 
+                            [ { p: { 'ent$': true, 'cmd$': 'load', 'org$': 'greens' },
+                                v: true } ],
+                            'org$': 'greens',
+                            'grp$': 'read' })
+                        expect(d(this).read).equal(out)
+
+                        // assign fred to read group
+                        bob.act(
+                          'role:allow,upon:grp,op:add,tgrp:read,'+
+                            'tusr:fred,torg:greens',
+                          function(err, out) {
+                            expect(out).equal(
+                              { grps: [ 'read' ], 'usr$': 'fred', 'org$': 'greens' })
+                            expect(d(this)['fred~greens'].grps)
+                              .equal(['read'])
+
+                            // fred can read as in `read` group
+                            fred.make$('foo').load$({id:2},function(err, out) {
+                              if(err) return fin(err)
+                              expect(out.a).equal(2)
+
+                              // fred can't write
+                              fred
+                                .make$('foo',{id$:3,a:3})
+                                .save$(function(err, out) {
+                                  expect(err.code).equal('no_write_access')
+
+                                  do_bar()
+                                })
+                            })
+                          })
+                      })
+                  })
                 })
-              })
-          })
+            })
+        })
       }
 
       function do_bar() {
@@ -1037,3 +1161,12 @@ lab.test('perm-access', fin => {
       }
     })
 })
+
+
+function p(o) {
+  console.dir(o,{depth:null,colors:true})
+}
+
+function d(s) {
+  return s.export('allow').store().data()
+}

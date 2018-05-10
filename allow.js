@@ -1,7 +1,11 @@
 /* Copyright (c) 2018 voxgig and other contributors, MIT License */
 'use strict'
 
+// NOTE: philosophically, denied permissions are errors, as the UI should
+// not enable the user to attempt disallowed operations.
 
+
+// NEXT: need to maintain lists of users in groups etc, and patterns to read this
 // NEXT: LRU, timeout cache, and clearance events
 
 
@@ -137,7 +141,9 @@ module.exports = function allow(options) {
       // case: write operation, ent given
       if('save' === msg.cmd || 'remove' === msg.cmd ) {
         activity = intern.make_entity_activity(msg, msg.ent)
-        
+
+        // NOTE: access does not need to be a boolean!
+        // Functionality could be extended here.
         const access = perms.find(activity)
 
         if(!access) {
@@ -286,7 +292,6 @@ const intern = (module.exports.intern = {
     store.get(usr+'~'+org, function(err, out) {
       if(err) return reply(err)
 
-      // TODO: rename this field to grps for consistency
       if(out && out.grps) {
         out.grps.forEach(function(grp) {
           store.get(grp, addperm(grp,{usr$:usr,org$:org})) // org's perms
@@ -333,8 +338,10 @@ const intern = (module.exports.intern = {
     
     if(null == op) return reply()
 
-    if(null == perm.p || null == perm.v) {
-      throw error('invalid_perm',{perm:perm})
+    if(null != perm) {
+      if(null == perm.p || null == perm.v) {
+        throw error('invalid_perm',{perm:perm})
+      }
     }
 
     const annot = {}
