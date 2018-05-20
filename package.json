@@ -21,7 +21,9 @@
   "files": [
     "LICENSE",
     "README.md",
-    "allow.js"
+    "allow.js",
+    "lib/errors.js"
+    "lib/store.js"
   ],
   "engines": {"node":">=6"},
   "dependencies": {
