@@ -65,13 +65,13 @@ module.exports = function allow(options) {
 
   // TODO: seneca.inward would be a better way to do this as guarantees coverage
   // of all role:entity actions, including those added later
-  seneca.wrap('role:entity', allow_entity)
+  seneca.root.wrap('role:entity', allow_entity)
 
   if (opts.pins || opts.pin) {
     // TODO fix this
     var pins = opts.pins //|| Array.isArray(opts.pin) ? opts.pin : [opts.pin]
     pins.forEach(function(pin) {
-      seneca.wrap(
+      seneca.root.wrap(
         seneca.util.clean(pin),
         make_allow_msg(
           pin.make_activity$ ||
@@ -87,8 +87,6 @@ module.exports = function allow(options) {
   function make_allow_msg(make_activity) {
     return function allow_msg(msg, reply, meta) {
       var principal = meta.custom.allow || {}
-      //console.log('SA AM P',principal)
-
       if (!principal.usr) return reply(error('no_user', { msg: msg }))
 
       var activity, access
@@ -96,14 +94,11 @@ module.exports = function allow(options) {
       resolve_perms(this, principal, function(err, perms) {
         if (err) return reply(err)
 
-        //console.log('AM perms', perms)
-
         activity = intern.extract_pattern_values(meta)
         activity.usr$ = principal.usr
         activity.org$ = principal.org
 
         activity = make_activity(activity, 'in', msg, null, meta)
-        //console.log('AM activity', activity)
 
         if (activity) {
           access = perms.find(activity)
@@ -138,9 +133,10 @@ module.exports = function allow(options) {
 
     resolve_perms(this, principal, function(err, perms) {
       if (err) return reply(err)
-      var activity
 
-      //console.log('RP',msg,perms)
+      console.log(perms.list())
+
+      var activity
 
       // case: write operation, ent given
       if ('save' === msg.cmd || 'remove' === msg.cmd) {
@@ -150,6 +146,8 @@ module.exports = function allow(options) {
         // Functionality could be extended here.
         const access = perms.find(activity)
 
+        console.log('AE SAVE',access,activity,msg)
+        
         if (!access) {
           return reply(error('no_write_access', { activity: activity }))
         }
@@ -192,8 +190,6 @@ module.exports = function allow(options) {
           reslist.forEach(function(ent) {
             activity = intern.make_entity_activity(principal, msg, ent)
             var access = perms.find(activity)
-
-            //console.log('LP',access,activity,ent,perms)
 
             if (access) {
               list.push(ent)

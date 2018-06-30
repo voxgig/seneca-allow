@@ -25,11 +25,13 @@
     "lib/errors.js",
     "lib/store.js"
   ],
-  "engines": {"node":">=6"},
+  "engines": {
+    "node": ">=6"
+  },
   "dependencies": {
-    "lodash": "4.17.10",
-    "optioner": "1.1.x",
-    "patrun": "0.5.1"
+    "lodash": "4.17",
+    "optioner": "1.1",
+    "patrun": "1.0"
   },
   "devDependencies": {
     "code": "4",
